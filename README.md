@@ -343,6 +343,54 @@ Adding more Playwright workers on a single machine eventually hits CPU and memor
 
 ---
 
+## Scaling to Large Test Suites
+
+This project uses 3 shards × 2 workers = **6 parallel slots** — a small setup to learn the concepts. Here is how the same infrastructure scales to thousands of tests by changing two numbers.
+
+### Time savings by configuration
+
+Assuming an average test duration of 15 seconds:
+
+| Test count | Single threaded | 3 shards × 2 workers | 10 shards × 4 workers | 20 shards × 4 workers |
+|---|---|---|---|---|
+| 100 tests | ~25 min | ~5 min | ~1 min | <1 min |
+| 1000 tests | ~4 hrs | ~33 min | ~7 min | ~4 min |
+| 5000 tests | ~20 hrs | ~2.5 hrs | ~31 min | ~16 min |
+| 10000 tests | ~41 hrs | ~5 hrs | ~63 min | ~31 min |
+
+> Times are estimates. Real results depend on test complexity, setup/teardown time, and available cluster resources.
+
+### How to scale up
+
+**Kubernetes** — change two numbers in `k8s/playwright-job.yaml`:
+```yaml
+spec:
+  completions: 10    # was 3 — total number of pods to run
+  parallelism: 10    # was 3 — how many run at the same time
+```
+
+**GitHub Actions** — extend the matrix and update the shard total:
+```yaml
+matrix:
+  shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]   # was [1, 2, 3]
+
+run: npx playwright test --shard=${{ matrix.shard }}/10   # update total
+```
+
+**Workers per shard** — increase `WORKERS` in the ConfigMap or CI env:
+```yaml
+data:
+  WORKERS: "4"   # was 2
+```
+
+No changes to test code. The same tests automatically distribute across however many shards you define.
+
+### GitHub Actions free tier limits
+
+GitHub free accounts have limits on concurrent jobs (typically 20). For large suites on a free account keep shards at 3–5 and increase workers per shard (4–6) rather than adding many shards. A paid account or self-hosted runners removes this ceiling.
+
+---
+
 ## Code Quality
 
 ```bash
@@ -370,3 +418,95 @@ ESLint is configured with:
 | `PETSTORE_API_KEY` | `.env` / GitHub Secret / K8s Secret | Petstore API auth key |
 | `WORKERS` | K8s ConfigMap / CI env | Playwright workers per shard |
 | `CI` | GitHub Actions / K8s ConfigMap | Enables blob reporter and CI settings |
+
+---
+
+## Docker & Kubernetes — QA Interview Reference
+
+### Docker
+
+**Q: What is Docker and why is it useful for QA?**
+Docker packages an application and all its dependencies (Node.js, browsers, OS libraries) into a container image. For QA it means every test run — on a developer laptop, in CI, or on a Kubernetes pod — uses exactly the same environment, eliminating "it passed on my machine" failures.
+
+**Q: What is the difference between a Docker image and a container?**
+An image is the blueprint — a read-only snapshot of the filesystem and configuration built from a Dockerfile. A container is a running instance of that image. You can run many containers from the same image simultaneously.
+
+**Q: What is a Dockerfile?**
+A text file with instructions that Docker follows to build an image, step by step — choosing a base image, copying files, installing dependencies, and defining the command that runs when the container starts.
+
+**Q: What is `.dockerignore` and why does it matter for QA?**
+It tells Docker which files to exclude when building the image, similar to `.gitignore`. For test projects you exclude `node_modules`, `.env`, and `test-results` to keep the image small and prevent local secrets from being baked into the image.
+
+**Q: What is a volume mount and how would a QA engineer use it?**
+A volume mount links a folder on the host machine to a folder inside the container. QA engineers use it to get test reports out of the container after tests finish — without a mount the report is generated inside the container and lost when it exits.
+```bash
+docker run -v "${PWD}/playwright-report:/app/playwright-report" playwright-tests
+```
+
+**Q: What is the difference between `CMD` and `ENTRYPOINT` in a Dockerfile?**
+`ENTRYPOINT` sets the fixed command that always runs (e.g. `npx playwright test`). `CMD` provides default arguments that can be overridden. Using `ENTRYPOINT` for the test runner means you can still pass Playwright flags like `--project=api` or `--shard=1/3` when running the container.
+
+**Q: How do you pass credentials to a Docker container without hardcoding them?**
+Use `--env-file` to pass an `.env` file at runtime. The file stays on the host and is never baked into the image.
+```bash
+docker run --env-file .env playwright-tests
+```
+
+**Q: How do you check logs from a Docker container?**
+```bash
+docker logs <container-id>          # all logs
+docker logs -f <container-id>       # follow live output
+docker ps -a                        # list all containers including stopped ones
+```
+
+---
+
+### Kubernetes
+
+**Q: What is Kubernetes and why would a QA team use it?**
+Kubernetes (K8s) is a system for managing containerised workloads across a cluster of machines. For QA it provides infrastructure to run test pods in parallel, control their resources, and clean them up automatically — without manually managing servers.
+
+**Q: What is a Pod in Kubernetes?**
+The smallest deployable unit in K8s. A Pod wraps one or more containers that share the same network and storage. In this project each Pod runs one Playwright shard.
+
+**Q: What is the difference between a Deployment and a Job?**
+A Deployment keeps containers running continuously (for web servers). A Job runs containers to completion and then stops — perfect for test execution where you want the pod to finish and exit, not restart.
+
+**Q: What is an Indexed Job and how does it enable test sharding?**
+An Indexed Job in K8s sets `completionMode: Indexed` and assigns each pod a unique index (`JOB_COMPLETION_INDEX`: 0, 1, 2...). Each pod uses its index to calculate its shard number, so 3 pods automatically run `--shard=1/3`, `--shard=2/3`, `--shard=3/3` without any manual coordination.
+
+**Q: What is a ConfigMap and a Secret? Why are they separate?**
+Both inject configuration into pods. ConfigMap is for non-sensitive values (like `WORKERS=2`, `CI=true`). Secret is for sensitive values (passwords, API keys) and is stored encrypted in the cluster. Keeping them separate follows the principle of least exposure.
+
+**Q: What are resource requests and limits in a Kubernetes Pod?**
+`requests` is the minimum CPU/memory the pod needs — K8s uses this to decide which node to place it on. `limits` is the maximum it can use — K8s kills the container if it exceeds this. For test pods this prevents one runaway test from consuming all cluster resources.
+
+**Q: What does `restartPolicy: Never` mean in a test Job?**
+If the container exits (pass or fail), K8s does not restart it. This is correct for tests — you want a clean result, not an infinite retry loop. Combined with `backoffLimit: 0` it means the Job stops immediately on failure so you can inspect the logs.
+
+**Q: How does Playwright sharding work with Kubernetes?**
+Playwright's `--shard=N/M` flag splits the test suite into M equal parts and runs only part N. In K8s, an Indexed Job with `completions: M` and `parallelism: M` starts M pods simultaneously. Each pod reads its `JOB_COMPLETION_INDEX`, adds 1, and passes that as N to Playwright. All pods run in parallel, each handling a different slice of the test suite.
+
+**Q: What is `kubectl` and give some commands a QA engineer would use?**
+`kubectl` is the command-line tool to interact with a Kubernetes cluster.
+```bash
+kubectl apply -f k8s/               # deploy all manifests
+kubectl get pods -l app=playwright-tests    # list test pods
+kubectl get pods -w                 # watch pod status live
+kubectl logs <pod-name>             # view test output
+kubectl logs -l app=playwright-tests --prefix   # logs from all pods at once
+kubectl cp <pod>:/app/blob-report ./local-dir   # copy report out of a pod
+kubectl delete job playwright-test-run          # clean up after a run
+kubectl describe pod <pod-name>     # debug a failing pod
+```
+
+**Q: What is the difference between `parallelism` and `completions` in a Job?**
+`completions` is the total number of pods that must finish successfully for the Job to be considered done. `parallelism` is how many can run at the same time. Setting both to the same number (e.g. 3) means all pods start simultaneously — which is what you want for test sharding.
+
+**Q: How would you debug a Kubernetes pod that failed during a test run?**
+```bash
+kubectl get pods -l app=playwright-tests   # find the failed pod name
+kubectl logs <pod-name>                    # check test output and errors
+kubectl describe pod <pod-name>            # check events (OOMKilled = out of memory, ImagePullBackOff = wrong image name)
+```
+Common causes: wrong Docker image name, missing Secret values, or pod running out of memory (increase `limits.memory` in the Job manifest).

@@ -78,6 +78,19 @@ Loaded from `.env` locally (via dotenv in `playwright.config.ts`), from Kubernet
 | `WORKERS` | Playwright workers per shard (K8s/CI) |
 | `CI` | Switches to blob reporter + CI settings |
 
+## Maintenance Notes
+
+### GitHub Actions warnings (non-breaking)
+| Warning | Cause | Action needed |
+|---|---|---|
+| "Node.js 20 is deprecated" | Bundled action runners internally used Node 20; GitHub forces Node 24 | None — GitHub already runs them on Node 24. Resolves automatically when `actions/checkout`, `actions/setup-node`, `actions/upload-artifact`, `actions/download-artifact` release Node 24 native versions |
+| "ubuntu-latest will migrate to Ubuntu 26" | `ubuntu-latest` runner label will point to Ubuntu 26 from October 19, 2026 | No action until 2026; pin `runs-on: ubuntu-24.04` if you want to lock the version explicitly |
+
+### Keeping dependencies up to date
+- Update Playwright version in `package.json` and `Dockerfile` together — both must stay in sync
+- After updating Playwright, run `npx playwright install` locally and rebuild the Docker image
+- Check `npm audit` before major releases
+
 ## Playwright Projects
 | Project | Matches | Purpose |
 |---|---|---|
