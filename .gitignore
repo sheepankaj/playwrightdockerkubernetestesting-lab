@@ -1,0 +1,20 @@
+# Environment
+.env
+
+# Playwright outputs
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+/results
+
+# Kubernetes secrets (contains credentials — never commit real values)
+k8s/secret.yaml
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.log
+.vscode/settings.json

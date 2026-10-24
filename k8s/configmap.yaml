@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: playwright-config
+  labels:
+    app: playwright-tests
+data:
+  CI: "true"
+  WORKERS: "2"
+  TOTAL_SHARDS: "3"

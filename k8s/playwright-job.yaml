@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: playwright-test-run
+  labels:
+    app: playwright-tests
+spec:
+  completions: 3
+  parallelism: 3
+  completionMode: Indexed
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: playwright-tests
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: playwright
+          image: ghcr.io/sheepankaj/playwright-docker-kubernetes-testing-lab:latest
+          imagePullPolicy: Always
+          command: ["sh", "-c"]
+          args:
+            - npx playwright test --shard=$((JOB_COMPLETION_INDEX + 1))/$(TOTAL_SHARDS)
+          envFrom:
+            - configMapRef:
+                name: playwright-config
+            - secretRef:
+                name: playwright-secrets
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
