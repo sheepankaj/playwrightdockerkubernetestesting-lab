@@ -160,31 +160,71 @@ docker run --env-file .env -e CI=true -e WORKERS=2 playwright-tests --shard=1/3
 
 ### With Kubernetes (local minikube)
 
+#### Before applying manifests — create the Secret locally
+
+`k8s/secret.yaml` is gitignored (never committed) to prevent credentials from entering the repository. Create the Kubernetes Secret directly via `kubectl` instead:
+
+```bash
+kubectl create secret generic playwright-secrets \
+  --from-literal=STANDARD_USERNAME=standard_user \
+  --from-literal=PASSWORD=secret_sauce \
+  --from-literal=LOCKED_OUT_USER=locked_out_user \
+  --from-literal=PETSTORE_API_KEY=special-key
+```
+
+#### Run the tests
+
 ```bash
 # Start minikube
 minikube start
 
-# Build image inside minikube (so it can access it locally)
+# Build image inside minikube's Docker daemon so the Job can pull it locally
 eval $(minikube docker-env)
 docker build -t playwright-tests:latest .
 
-# Update playwright-job.yaml image to: playwright-tests:latest
-# and add imagePullPolicy: Never before applying
+# In playwright-job.yaml, change the image line to:
+#   image: playwright-tests:latest
+#   imagePullPolicy: Never
 
-# Apply manifests
+# Apply config and job (Secret already created above)
 kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/secret.yaml
 kubectl apply -f k8s/playwright-job.yaml
 
-# Watch pod status
-kubectl get pods -w
+# Watch pod status live
+kubectl get pods -w -l app=playwright-tests
 
-# View logs from a pod
-kubectl logs -l app=playwright-tests
+# View test output from all pods at once
+kubectl logs -l app=playwright-tests --prefix
+
+# View events if a pod fails (OOMKilled = needs more memory, ImagePullBackOff = wrong image name)
+kubectl describe pod <pod-name>
 
 # Clean up after run
 kubectl delete job playwright-test-run
 ```
+
+#### Collecting reports from Kubernetes pods
+
+Pods stay in `Completed` state after the Job finishes, giving you time to copy the blob reports out. Copy from each pod into one combined local folder, then merge:
+
+```bash
+mkdir blob-report-all
+kubectl cp playwright-test-run-0:/app/blob-report/. ./blob-report-all
+kubectl cp playwright-test-run-1:/app/blob-report/. ./blob-report-all
+kubectl cp playwright-test-run-2:/app/blob-report/. ./blob-report-all
+
+npx playwright merge-reports --reporter html ./blob-report-all
+npx playwright show-report
+```
+
+> **Production note:** In a real cluster you would mount a shared PersistentVolumeClaim or upload blob reports to object storage (S3, GCS) so all pods write to one place automatically. The `kubectl cp` approach works well for learning and small teams.
+
+#### Why `backoffLimit: 0`
+
+The Job is set to `backoffLimit: 0`, meaning Kubernetes will not automatically retry a failed pod. This is intentional for tests:
+- A test failure is a deliberate signal — retrying it automatically hides the problem
+- Infrastructure failures (wrong image, out of memory) should be fixed and re-run manually, not silently retried
+- To distinguish a test failure from an infrastructure failure: check `kubectl logs` for test output vs `kubectl describe pod` for events like `OOMKilled` or `ErrImagePull`
 
 ---
 
@@ -272,6 +312,24 @@ Reports are kept for **30 days**. Open `index.html` from the downloaded zip to v
 The pipeline runs automatically on push or pull request to `main`/`master`.
 
 It splits the test suite into **3 shards** running in parallel, each with **2 workers**, giving up to **6 concurrent test executions**. After all shards finish, a merge job combines them into a single downloadable HTML report.
+
+### Pipeline jobs
+
+| Job | Trigger | What it does |
+|---|---|---|
+| `Shard 1/3`, `Shard 2/3`, `Shard 3/3` | push + PR | Runs tests on native Ubuntu runners using `npm ci` + `npx playwright install` |
+| `Merge & Publish Report` | after all shards | Merges blob reports into one HTML artifact |
+| `docker-publish` | push to main/master only (after tests pass) | Builds the Docker image and pushes it to GitHub Container Registry (GHCR) |
+
+### Why the test jobs use native runners, not Docker
+
+The test shards run directly on `ubuntu-latest` using `npm ci` and `npx playwright install` rather than pulling the Docker image. This is intentional:
+
+- **Faster**: no image pull or container startup overhead per shard
+- **Simpler**: GitHub already provides a clean Ubuntu environment with the right Node version
+- **Cheaper**: native runners use less CI minutes than building + pulling a container for every shard
+
+The Docker image is built and published separately by `docker-publish` after tests pass. Its purpose is to make the test environment available to **Kubernetes** — not to run tests inside CI. Both layers serve different audiences: GitHub Actions runs the tests quickly, Docker packages the environment for K8s deployment.
 
 ### Add Secrets to GitHub
 
