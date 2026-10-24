@@ -6,12 +6,9 @@ on:
   pull_request:
     branches: [main, master]
 
-env:
-  TOTAL_SHARDS: 3
-
 jobs:
   test:
-    name: "Shard ${{ matrix.shard }}/${{ env.TOTAL_SHARDS }}"
+    name: "Shard ${{ matrix.shard }}/3"
     timeout-minutes: 60
     runs-on: ubuntu-latest
     strategy:
@@ -32,8 +29,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps
 
-      - name: Run tests (shard ${{ matrix.shard }}/${{ env.TOTAL_SHARDS }})
-        run: npx playwright test --shard=${{ matrix.shard }}/${{ env.TOTAL_SHARDS }}
+      - name: Run tests (shard ${{ matrix.shard }}/3)
+        run: npx playwright test --shard=${{ matrix.shard }}/3
         env:
           CI: true
           WORKERS: 2
