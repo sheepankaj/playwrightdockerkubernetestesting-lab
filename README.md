@@ -178,8 +178,13 @@ kubectl create secret generic playwright-secrets \
 # Start minikube
 minikube start
 
-# Build image inside minikube's Docker daemon so the Job can pull it locally
+# Point your shell at minikube's Docker daemon so the Job can pull the image locally
+# Bash / Git Bash:
 eval $(minikube docker-env)
+
+# PowerShell:
+& minikube -p minikube docker-env --shell powershell | Invoke-Expression
+
 docker build -t playwright-tests:latest .
 
 # In playwright-job.yaml, change the image line to:
