@@ -17,7 +17,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: playwright
-          image: ghcr.io/sheepankaj/playwright-docker-kubernetes-testing-lab:latest
+          image: ghcr.io/sheepankaj/playwrightdockerkubernetestesting-lab:latest
           imagePullPolicy: Always
           command: ["sh", "-c"]
           args:

@@ -52,8 +52,8 @@ Download from [minikube.sigs.k8s.io](https://minikube.sigs.k8s.io/docs/start)
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/playwright-docker-kubernetes-testing-lab.git
-cd playwright-docker-kubernetes-testing-lab
+git clone https://github.com/sheepankaj/playwrightdockerkubernetestesting-lab.git
+cd playwrightdockerkubernetestesting-lab
 ```
 
 ### 2. Install Node dependencies
@@ -87,7 +87,7 @@ PETSTORE_API_KEY=special-key
 ## Project Structure
 
 ```
-playwright-docker-kubernetes-testing-lab/
+playwrightdockerkubernetestesting-lab/
 ├── framework/
 │   ├── api/                    # API client classes
 │   │   └── petStoreClient.ts
