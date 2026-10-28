@@ -15,7 +15,13 @@ export default defineConfig({
       : undefined,
   reporter: process.env.CI
     ? [["blob"], ["list"]]
-    : [["list"], ["html", { open: "never" }]],
+    : [
+        ["list"],
+        [
+          "html",
+          { open: "never", title: "Playwright Docker Kubernetes Testing Lab" },
+        ],
+      ],
   use: {
     baseURL: "https://www.saucedemo.com",
     screenshot: "only-on-failure",

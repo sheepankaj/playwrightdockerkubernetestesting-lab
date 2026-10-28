@@ -8,6 +8,14 @@ test.describe(
       page,
       saucedemoLoginPage,
     }) => {
+      test
+        .info()
+        .annotations.push(
+          { type: "Author", description: "QA Team" },
+          { type: "TestType", description: "Smoke" },
+          { type: "Jira", description: "PW-101" },
+        );
+
       await saucedemoLoginPage.login(
         process.env.STANDARD_USERNAME!,
         process.env.PASSWORD!,
