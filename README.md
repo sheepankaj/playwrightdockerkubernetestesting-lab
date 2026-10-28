@@ -158,6 +158,73 @@ docker run --env-file .env playwright-tests --project=chromium
 docker run --env-file .env -e CI=true -e WORKERS=2 playwright-tests --shard=1/3
 ```
 
+### With AWS EKS
+
+> **Note on automated CI deployment:** AWS Academy and organisation-managed accounts have Service Control Policies (SCPs) that block `iam:CreateOpenIDConnectProvider` and other IAM operations required for OIDC-based GitHub Actions → EKS authentication. For these accounts, EKS deployment is a manual step run from your local terminal. CI still handles test execution and Docker image publishing automatically — only the `kubectl apply` step is manual.
+
+#### Prerequisites
+Install the AWS CLI and authenticate:
+```bash
+# Install AWS CLI — https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html
+aws configure   # enter your AWS Access Key, Secret, region: eu-north-1, output: json
+```
+
+#### Step 1 — Connect kubectl to your EKS cluster
+```bash
+aws eks update-kubeconfig --region eu-north-1 --name playwrighttest
+
+# Verify connection
+kubectl get nodes
+```
+
+#### Step 2 — Create the namespace and secrets
+```bash
+# Create the playwright namespace
+kubectl apply -f k8s/namespace.yaml
+
+# Create credentials secret inside the playwright namespace
+kubectl create secret generic playwright-secrets \
+  --namespace=playwright \
+  --from-literal=STANDARD_USERNAME=standard_user \
+  --from-literal=PASSWORD=secret_sauce \
+  --from-literal=LOCKED_OUT_USER=locked_out_user \
+  --from-literal=PETSTORE_API_KEY=special-key
+```
+
+#### Step 3 — Apply config and run the Job
+```bash
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/playwright-job.yaml
+
+# Watch pods start across 3 shards
+kubectl get pods -n playwright -w
+
+# View test output from all pods
+kubectl logs -n playwright -l app=playwright-tests --prefix
+```
+
+#### Step 4 — Collect reports
+```bash
+# Copy blob reports from all 3 pods into one folder
+mkdir blob-report-all
+kubectl cp playwright/playwright-test-run-0:/app/blob-report/. ./blob-report-all
+kubectl cp playwright/playwright-test-run-1:/app/blob-report/. ./blob-report-all
+kubectl cp playwright/playwright-test-run-2:/app/blob-report/. ./blob-report-all
+
+# Merge into HTML report
+npx playwright merge-reports --reporter html ./blob-report-all
+npx playwright show-report
+```
+
+#### Step 5 — Clean up
+```bash
+kubectl delete job playwright-test-run -n playwright
+```
+
+> **Node type note:** `a1.large` is ARM64 (Graviton). The Docker image is built for both `linux/amd64` and `linux/arm64` via the CI pipeline — EKS will pull the correct architecture automatically. With 2 vCPU / 4 GB RAM, each pod runs 2 Playwright workers giving 3 shards × 2 workers = **6 parallel test slots** at ~$0.007/hr per node.
+
+---
+
 ### With Kubernetes (local minikube)
 
 #### Before applying manifests — create the Secret locally

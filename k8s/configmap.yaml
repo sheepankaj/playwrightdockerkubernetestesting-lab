@@ -2,9 +2,10 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: playwright-config
+  namespace: playwright
   labels:
     app: playwright-tests
 data:
   CI: "true"
-  WORKERS: "2"
+  WORKERS: "1"
   TOTAL_SHARDS: "3"

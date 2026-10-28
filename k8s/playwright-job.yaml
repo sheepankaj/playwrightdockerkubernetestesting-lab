@@ -2,6 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: playwright-test-run
+  namespace: playwright
   labels:
     app: playwright-tests
 spec:
@@ -29,8 +30,8 @@ spec:
                 name: playwright-secrets
           resources:
             requests:
-              memory: "1Gi"
-              cpu: "500m"
+              memory: "600Mi"
+              cpu: "400m"
             limits:
-              memory: "2Gi"
-              cpu: "1000m"
+              memory: "1500Mi"
+              cpu: "900m"
