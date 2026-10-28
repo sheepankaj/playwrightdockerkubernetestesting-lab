@@ -160,68 +160,132 @@ docker run --env-file .env -e CI=true -e WORKERS=2 playwright-tests --shard=1/3
 
 ### With AWS EKS
 
-> **Note on automated CI deployment:** AWS Academy and organisation-managed accounts have Service Control Policies (SCPs) that block `iam:CreateOpenIDConnectProvider` and other IAM operations required for OIDC-based GitHub Actions → EKS authentication. For these accounts, EKS deployment is a manual step run from your local terminal. CI still handles test execution and Docker image publishing automatically — only the `kubectl apply` step is manual.
+> **Note on automated CI deployment:** AWS Academy and organisation-managed accounts have Service Control Policies (SCPs) that block IAM operations required for OIDC-based GitHub Actions → EKS authentication. For these accounts, EKS deployment is a manual step. CI still handles test execution and Docker image publishing fully automatically — only the `kubectl apply` is manual.
 
-#### Prerequisites
-Install the AWS CLI and authenticate:
+> **Node type:** This setup uses `t3.small` (2 vCPU, 2 GB RAM, AMD64). Workers per pod is set to `1` in the ConfigMap to stay within the memory limit when two pods land on the same node. The multi-arch Docker image covers both AMD64 and ARM64 so the node type can be changed without rebuilding.
+
+---
+
+#### First-time setup (run once only)
+
+The easiest way is **AWS CloudShell** — it has AWS CLI, kubectl, and your credentials pre-loaded with no local install needed.
+
+**Open CloudShell:** In the AWS Console, click the `>_` icon in the top-right toolbar.
+
+**Step 1 — Clone the repo into CloudShell**
 ```bash
-# Install AWS CLI — https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html
-aws configure   # enter your AWS Access Key, Secret, region: eu-north-1, output: json
+git clone https://github.com/sheepankaj/playwrightdockerkubernetestesting-lab.git
+cd playwrightdockerkubernetestesting-lab
 ```
 
-#### Step 1 — Connect kubectl to your EKS cluster
+**Step 2 — Connect kubectl to your EKS cluster**
 ```bash
 aws eks update-kubeconfig --region eu-north-1 --name playwrighttest
 
-# Verify connection
+# Verify both nodes are visible and Ready
 kubectl get nodes
 ```
 
-#### Step 2 — Create the namespace and secrets
+**Step 3 — Create the namespace**
 ```bash
-# Create the playwright namespace
 kubectl apply -f k8s/namespace.yaml
-
-# Create credentials secret inside the playwright namespace
-kubectl create secret generic playwright-secrets \
-  --namespace=playwright \
-  --from-literal=STANDARD_USERNAME=standard_user \
-  --from-literal=PASSWORD=secret_sauce \
-  --from-literal=LOCKED_OUT_USER=locked_out_user \
-  --from-literal=PETSTORE_API_KEY=special-key
+kubectl get namespace playwright
 ```
 
-#### Step 3 — Apply config and run the Job
+**Step 4 — Apply the ConfigMap**
 ```bash
 kubectl apply -f k8s/configmap.yaml
-kubectl apply -f k8s/playwright-job.yaml
-
-# Watch pods start across 3 shards
-kubectl get pods -n playwright -w
-
-# View test output from all pods
-kubectl logs -n playwright -l app=playwright-tests --prefix
 ```
 
-#### Step 4 — Collect reports
+**Step 5 — Create the secrets**
+
+Use the credential values from your `.env` file. The `--dry-run=client -o yaml | kubectl apply -f -` pattern makes this safe to re-run (creates or updates):
 ```bash
-# Copy blob reports from all 3 pods into one folder
+kubectl create secret generic playwright-secrets \
+  --namespace=playwright \
+  --from-literal=STANDARD_USERNAME=<value from .env> \
+  --from-literal=PASSWORD=<value from .env> \
+  --from-literal=LOCKED_OUT_USER=<value from .env> \
+  --from-literal=PETSTORE_API_KEY=<value from .env> \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+---
+
+#### Running tests on EKS
+
+**Step 6 — Delete any previous job (safe even if none exists)**
+```bash
+kubectl delete job playwright-test-run -n playwright --ignore-not-found=true
+```
+
+**Step 7 — Run the tests**
+```bash
+kubectl apply -f k8s/playwright-job.yaml
+```
+
+**Step 8 — Watch the 3 pods start across your nodes**
+```bash
+kubectl get pods -n playwright -w
+```
+Wait until all 3 pods show `Completed`. Press `Ctrl+C` to stop watching.
+
+**Step 9 — View test output from all pods**
+```bash
+kubectl logs -n playwright -l app=playwright-tests --prefix=true
+```
+
+**Step 10 — Debug a failing pod (if needed)**
+```bash
+# List pods with status
+kubectl get pods -n playwright
+
+# Check events for a specific pod (OOMKilled = needs more memory, ImagePullBackOff = wrong image)
+kubectl describe pod <pod-name> -n playwright
+```
+
+---
+
+#### Collecting the HTML report
+
+Run these from your **local VS Code terminal** (not CloudShell), after connecting kubectl locally:
+
+```bash
+# Connect locally first (if not already)
+aws eks update-kubeconfig --region eu-north-1 --name playwrighttest
+
+# Copy blob reports from all 3 completed pods into one folder
 mkdir blob-report-all
 kubectl cp playwright/playwright-test-run-0:/app/blob-report/. ./blob-report-all
 kubectl cp playwright/playwright-test-run-1:/app/blob-report/. ./blob-report-all
 kubectl cp playwright/playwright-test-run-2:/app/blob-report/. ./blob-report-all
 
-# Merge into HTML report
+# Merge into a single HTML report and open it
 npx playwright merge-reports --reporter html ./blob-report-all
 npx playwright show-report
 ```
 
-#### Step 5 — Clean up
+---
+
+#### Clean up after each run
 ```bash
 kubectl delete job playwright-test-run -n playwright
 ```
 
-> **Node type note:** `a1.large` is ARM64 (Graviton). The Docker image is built for both `linux/amd64` and `linux/arm64` via the CI pipeline — EKS will pull the correct architecture automatically. With 2 vCPU / 4 GB RAM, each pod runs 2 Playwright workers giving 3 shards × 2 workers = **6 parallel test slots** at ~$0.007/hr per node.
+---
+
+#### Subsequent runs (steps 6–9 only)
+
+Once the namespace, ConfigMap, and secrets are in place, every re-run only needs:
+```bash
+# Pull latest manifests if you pushed changes
+git pull
+
+kubectl delete job playwright-test-run -n playwright --ignore-not-found=true
+kubectl apply -f k8s/playwright-job.yaml
+kubectl get pods -n playwright -w
+kubectl logs -n playwright -l app=playwright-tests --prefix=true
+```
 
 ---
 
