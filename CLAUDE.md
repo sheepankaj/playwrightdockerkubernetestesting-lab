@@ -9,6 +9,7 @@ A Playwright testing framework covering UI tests (Saucedemo) and API tests (Pets
 - **Docker** — packages the test environment
 - **Kubernetes** — runs sharded test pods in parallel
 - **GitHub Actions** — CI with 3-shard matrix + merged HTML report
+- **Allure** — richer HTML report with history trends, browser labels, and environment info
 - **ESLint + Prettier** — code quality
 
 ## Project Structure
@@ -34,7 +35,10 @@ npm run test:ui                   # UI tests only (all browsers)
 npm run test:api                  # API tests only
 npm run lint                      # ESLint check
 npm run format                    # Prettier format
-npm run report                    # open HTML report (local runs only)
+npm run report                    # open Playwright HTML report (local runs only)
+npm run allure:report             # inject history + generate Allure HTML report
+npm run allure:open               # open generated Allure report in browser
+npm run allure:serve              # quick serve (no history persistence)
 
 # Docker
 docker build -t playwright-tests .
@@ -49,17 +53,19 @@ docker run --env-file .env -e CI=true -e WORKERS=2 playwright-tests --shard=1/3
 
 | Run type | Reporter | How to view |
 |---|---|---|
-| Local (no Docker) | HTML | `npm run report` |
+| Local (no Docker) | HTML + Allure | `npm run report` (Playwright) · `npm run allure:report && npm run allure:open` (Allure) |
 | Local Docker (no `CI=true`) | HTML | mount `-v` → `npx playwright show-report playwright-report` |
 | Local Docker (with `CI=true`) | Blob | combine shard folders → `npx playwright merge-reports --reporter html ./blob-report-all` |
 | Kubernetes | Blob | `kubectl cp` each pod → same merge command above |
-| GitHub Actions | Blob → merged | Actions tab → Artifacts → download `playwright-report` |
+| GitHub Actions | Blob → merged + Allure | Actions tab → Artifacts → `playwright-report` or `allure-report` |
 
 **Important**: `merge-reports` takes ONE directory. Copy all shard blob outputs into a single folder first, then run merge on that folder. Running it with multiple directory arguments is an error.
 
+**Allure history (local)**: `allure:report` automatically copies `allure-report/history/` back into `allure-results/history/` before generating, so the Trend chart accumulates across runs. Always use `allure:report` + `allure:open` (not `allure:serve`) when history tracking matters.
+
 ## Framework Conventions
 - **POM pattern**: all locators and page actions live in `framework/pages/`. Tests only call page methods, never raw locators.
-- **Fixtures**: all custom fixtures in `framework/support/fixtures.ts`. Import `test` and `expect` from there, not directly from `@playwright/test`.
+- **Fixtures**: all custom fixtures in `framework/support/fixtures.ts`. Import `test` and `expect` from there, not directly from `@playwright/test`. Includes a `browserLabel` auto-fixture that stamps every test with its Playwright project name (chromium/firefox/webkit/api) as an Allure label.
 - **API client**: `PetStoreClient` methods return raw `APIResponse`. Assertions stay in the test spec.
 - **Auth**: `getApiAuthHeaders()` in `authHelper.ts` is the single source for API auth headers. It is applied once to the `APIRequestContext` via `extraHTTPHeaders` — never passed per-request.
 - **Sharding**: `--shard=N/M` is used in both K8s (via `JOB_COMPLETION_INDEX`) and GitHub Actions (matrix). Workers per shard controlled by `WORKERS` env var.
@@ -89,6 +95,7 @@ Loaded from `.env` locally (via dotenv in `playwright.config.ts`), from Kubernet
 ### Keeping dependencies up to date
 - Update Playwright version in `package.json` and `Dockerfile` together — both must stay in sync
 - After updating Playwright, run `npx playwright install` locally and rebuild the Docker image
+- When updating `@playwright/test`, also check for a compatible `allure-playwright` release (they track Playwright's reporter API)
 - Check `npm audit` before major releases
 
 ## Playwright Projects

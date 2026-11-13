@@ -10,6 +10,10 @@ node_modules/
 /playwright/.auth/
 /results
 
+# Allure outputs
+/allure-results/
+/allure-report/
+
 # Kubernetes secrets (contains credentials — never commit real values)
 k8s/secret.yaml
 
@@ -18,3 +22,6 @@ k8s/secret.yaml
 Thumbs.db
 *.log
 .vscode/settings.json
+
+# Claude Code
+.claude/

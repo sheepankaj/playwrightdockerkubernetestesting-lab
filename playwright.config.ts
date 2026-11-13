@@ -1,7 +1,15 @@
 import { defineConfig, devices } from "@playwright/test";
 import * as dotenv from "dotenv";
+import os from "os";
 
 dotenv.config();
+
+const environmentInfo = {
+  OS: `${os.type()} ${os.release()}`,
+  "Node.js": process.version,
+  Language: "TypeScript",
+  Framework: "Playwright",
+};
 
 export default defineConfig({
   testDir: "./tests",
@@ -14,13 +22,15 @@ export default defineConfig({
       ? 2
       : undefined,
   reporter: process.env.CI
-    ? [["blob"], ["list"]]
+    ? [
+        ["blob"],
+        ["list"],
+        ["allure-playwright", { detail: true, outputFolder: "allure-results", suiteTitle: false, environmentInfo }],
+      ]
     : [
         ["list"],
-        [
-          "html",
-          { open: "never", title: "Playwright Docker Kubernetes Testing Lab" },
-        ],
+        ["html", { open: "never", title: "Playwright Docker Kubernetes Testing Lab" }],
+        ["allure-playwright", { detail: true, outputFolder: "allure-results", suiteTitle: false, environmentInfo }],
       ],
   use: {
     baseURL: "https://www.saucedemo.com",

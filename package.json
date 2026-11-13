@@ -9,6 +9,9 @@
     "test:api": "npx playwright test --project=api",
     "smoke": "npx playwright test smoketest",
     "report": "npx playwright show-report",
+    "allure:report": "node -e \"const f=require('fs');if(f.existsSync('allure-report/history'))f.cpSync('allure-report/history','allure-results/history',{recursive:true,force:true})\" && npx allure generate allure-results --clean -o allure-report",
+    "allure:open": "npx allure open allure-report",
+    "allure:serve": "npx allure serve allure-results",
     "lint": "eslint framework tests",
     "format": "prettier --write \"**/*.{ts,mjs,json}\"",
     "prepare": "husky"
@@ -20,6 +23,8 @@
     "@eslint/js": "^9.0.0",
     "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.5",
+    "allure-commandline": "^2.46.1",
+    "allure-playwright": "^3.14.0",
     "eslint": "^9.0.0",
     "eslint-plugin-playwright": "^2.0.0",
     "husky": "^9.0.0",

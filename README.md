@@ -443,6 +443,57 @@ Reports are kept for **30 days**. Open `index.html` from the downloaded zip to v
 
 ---
 
+## Allure Report
+
+This project also generates an [Allure](https://allurereport.org) report alongside the standard Playwright HTML report. Allure provides richer visualisation including history trends, environment info, suite/browser breakdown, and category analysis.
+
+![Allure Report Overview](docs/allure-report-overview.png)
+
+### What the report shows
+
+| Section | Content |
+|---|---|
+| Overview | Pass rate donut, suite breakdown by browser (chromium / firefox / webkit / api), environment panel |
+| Environment | OS, Node.js version, Language, Framework — captured automatically at test runtime |
+| Suites | Tests grouped by browser/project name, then by describe block |
+| Graphs | Duration distribution, status distribution, retry rate |
+| Timeline | Test execution order and wall-clock timing across workers |
+| Trend | Pass/fail trend across runs — populates after the second CI run once history is seeded |
+| Categories | Custom failure categories (configurable) |
+
+### Generating locally
+
+```bash
+# Run tests first (produces allure-results/)
+npm test
+
+# Inject history from previous report + generate the HTML report
+npm run allure:report
+
+# Open the generated report in a browser
+npm run allure:open
+```
+
+> `npm run allure:serve` spins up a quick preview but does not persist the report, so the Trend chart does not accumulate. Use `allure:report` + `allure:open` for history tracking.
+
+### How history trends work
+
+**Locally:** `npm run allure:report` automatically copies `allure-report/history/` back into `allure-results/history/` before each `allure generate` call. Each subsequent `npm test` + `npm run allure:report` cycle adds a new data point to the Trend chart. The first run will show "There is nothing to show" — this is expected; the trend appears from the second run onwards.
+
+**In CI:** each run saves `allure-report/history/` as the `allure-history` artifact (kept for 90 days). The next run's `merge-reports` job downloads it and injects it into `allure-results/history/` before calling `allure generate`, so the Trend chart accumulates across pipeline runs.
+
+### CI artifacts
+
+After each GitHub Actions run, two report artifacts are available under **Actions → your run → Artifacts**:
+
+| Artifact | Contents | Retained |
+|---|---|---|
+| `playwright-report` | Merged Playwright HTML report | 30 days |
+| `allure-report` | Generated Allure HTML report | 30 days |
+| `allure-history` | History seed for the next run's trend chart | 90 days |
+
+---
+
 ## GitHub Actions CI
 
 The pipeline runs automatically on push or pull request to `main`/`master`.
@@ -454,7 +505,7 @@ It splits the test suite into **3 shards** running in parallel, each with **2 wo
 | Job | Trigger | What it does |
 |---|---|---|
 | `Shard 1/3`, `Shard 2/3`, `Shard 3/3` | push + PR | Runs tests on native Ubuntu runners using `npm ci` + `npx playwright install` |
-| `Merge & Publish Report` | after all shards | Merges blob reports into one HTML artifact |
+| `Merge & Publish Report` | after all shards | Merges blob reports into one Playwright HTML artifact; generates and uploads Allure report with history trend |
 | `docker-publish` | push to main/master only (after tests pass) | Builds the Docker image and pushes it to GitHub Container Registry (GHCR) |
 
 ### Why the test jobs use native runners, not Docker

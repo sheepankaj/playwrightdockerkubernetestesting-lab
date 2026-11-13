@@ -47,6 +47,14 @@ jobs:
           path: blob-report/
           retention-days: 1
 
+      - name: Upload Allure results (shard ${{ matrix.shard }})
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ matrix.shard }}
+          path: allure-results/
+          retention-days: 1
+
   merge-reports:
     name: Merge & Publish Report
     if: ${{ !cancelled() }}
@@ -79,6 +87,44 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 30
+
+      - name: Download all Allure results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: allure-results-*
+          merge-multiple: true
+          path: allure-results/
+
+      - name: Restore Allure history from previous run
+        uses: dawidd6/action-download-artifact@v7
+        with:
+          name: allure-history
+          workflow: playwright.yml
+          if_no_artifact_found: warn
+          path: allure-history/
+
+      - name: Inject history into results
+        run: |
+          if [ -d allure-history ]; then
+            cp -r allure-history allure-results/history
+          fi
+
+      - name: Generate Allure report
+        run: npx allure generate allure-results --clean -o allure-report
+
+      - name: Upload Allure report
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report/
+          retention-days: 30
+
+      - name: Save history for next run
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-history
+          path: allure-report/history/
+          retention-days: 90
 
   docker-publish:
     name: Build & Push Docker Image (multi-arch)

@@ -1,4 +1,5 @@
 import { test as base, expect } from "@playwright/test";
+import { label } from "allure-js-commons";
 import { SaucedemoLoginPage } from "../pages/saucedemologinPage";
 import { PetStoreClient } from "../api/petStoreClient";
 import { getApiAuthHeaders } from "../utils/authHelper";
@@ -6,6 +7,7 @@ import { getApiAuthHeaders } from "../utils/authHelper";
 type AllFixtures = {
   saucedemoLoginPage: SaucedemoLoginPage;
   petStoreClient: PetStoreClient;
+  browserLabel: void;
 };
 
 export const test = base.extend<AllFixtures>({
@@ -20,5 +22,12 @@ export const test = base.extend<AllFixtures>({
     await use(new PetStoreClient(apiContext));
     await apiContext.dispose();
   },
+  browserLabel: [
+    async ({}, use, testInfo) => {
+      await label("browser", testInfo.project.name);
+      await use();
+    },
+    { auto: true },
+  ],
 });
 export { expect };
